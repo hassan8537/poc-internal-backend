@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require("uuid");
 
 class ProjectService {
   constructor() {
-    this.tableName = "Projects";
+    this.tableName = "InventoryManagement";
     this.updatedLocation = (location) => {
       if (
         !location ||
@@ -34,9 +34,11 @@ class ProjectService {
     const creationDate = new Date().toISOString();
 
     const item = {
-      ProjectId: projectId,
-      CreationDate: creationDate,
+      PK: `PROJECT#${projectId}`,
+      SK: `PROJECT#${projectId}`,
+      EntityType: "Project",
       Name: name,
+      CreationDate: creationDate,
       Location: this.updatedLocation(location)
     };
 
@@ -63,13 +65,13 @@ class ProjectService {
 
   // Get a project by ID and creationDate
   async getProject(req, res) {
-    const { projectId, creationDate } = req.params;
+    const { projectId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        ProjectId: projectId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `PROJECT#${projectId}`
       }
     };
 
@@ -100,7 +102,7 @@ class ProjectService {
     };
 
     try {
-      const result = await docClient.scan(params).promise();
+      const result = await docClient.query(params).promise();
       return handlers.response.success({
         res,
         message: "Projects fetched successfully",
@@ -118,7 +120,7 @@ class ProjectService {
 
   // Update project name or location (takes parameters from req)
   async updateProject(req, res) {
-    const { projectId, creationDate } = req.params; // Make sure both are provided
+    const { projectId } = req.params; // Make sure both are provided
     const { name, location } = req.body;
 
     const updateExpression = [];
@@ -146,8 +148,8 @@ class ProjectService {
     const params = {
       TableName: this.tableName,
       Key: {
-        ProjectId: projectId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `PROJECT#${projectId}`
       },
       UpdateExpression: `SET ${updateExpression.join(", ")}`,
       ExpressionAttributeValues: expressionAttributeValues,
@@ -175,13 +177,13 @@ class ProjectService {
 
   // Delete a project (takes parameters from req)
   async deleteProject(req, res) {
-    const { projectId, creationDate } = req.params;
+    const { projectId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        ProjectId: projectId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `PROJECT#${projectId}`
       }
     };
 

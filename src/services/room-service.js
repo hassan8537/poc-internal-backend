@@ -5,13 +5,12 @@ const fs = require("fs");
 
 class RoomService {
   constructor() {
-    this.tableName = "Rooms";
+    this.tableName = "Rooms"; // Single table, but uses composite keys
     this.s3BucketName = "uploads-476114132237"; // Set your S3 bucket name here
   }
 
   // Upload a video to S3
   async uploadVideoToS3(req, res) {
-    // Get the file from the 'videos' field
     const file = req.files?.videos?.[0];
 
     if (!file) {
@@ -21,10 +20,9 @@ class RoomService {
       });
     }
 
-    const localFilePath = file.path; // Get the path of the file saved locally
-    const fileKey = `rooms/${uuidv4()}.mp4`; // Generate a unique key for the video on S3
+    const localFilePath = file.path;
+    const fileKey = `rooms/${uuidv4()}.mp4`; // Unique key for S3 video
 
-    // Read the file as a buffer
     fs.readFile(localFilePath, async (err, data) => {
       if (err) {
         return handlers.response.error({
@@ -34,27 +32,23 @@ class RoomService {
         });
       }
 
-      // Define S3 upload parameters
       const params = {
         Bucket: this.s3BucketName,
         Key: fileKey,
-        Body: data, // Buffer of the file read from disk
+        Body: data,
         ContentType: file.mimetype,
-        ACL: "public-read" // Make the file publicly accessible
+        ACL: "public-read"
       };
 
       try {
-        // Upload the file to S3
         const uploadResult = await s3.upload(params).promise();
 
-        // Delete the local file after uploading to S3
         fs.unlink(localFilePath, (err) => {
           if (err) {
             console.error("Failed to delete local file:", err);
           }
         });
 
-        // Return the URL of the uploaded file on S3
         return handlers.response.success({
           res,
           message: "Video uploaded successfully",
@@ -62,8 +56,6 @@ class RoomService {
         });
       } catch (error) {
         console.error(error);
-
-        // Delete the local file if upload fails
         fs.unlink(localFilePath, (err) => {
           if (err) {
             console.error("Failed to delete local file:", err);
@@ -91,22 +83,24 @@ class RoomService {
       });
     }
 
-    const roomId = uuidv4(); // Generate a unique Room ID
+    const roomId = uuidv4();
     const creationDate = new Date().toISOString();
 
-    const item = {
+    const roomItem = {
+      PK: `PROJECT#${projectId}`,
+      SK: `ROOM#${roomId}`,
+      EntityType: "Room",
       RoomId: roomId,
-      CreationDate: creationDate,
-      ProjectId: projectId, // Foreign Key to Project
       Name: name,
-      Video: videoUrl, // Store S3 URL of the video
       Description: description,
-      TotalInventories: totalInventories
+      Video: videoUrl,
+      TotalInventories: totalInventories,
+      CreationDate: creationDate
     };
 
     const params = {
       TableName: this.tableName,
-      Item: item
+      Item: roomItem
     };
 
     try {
@@ -115,7 +109,7 @@ class RoomService {
       return handlers.response.success({
         res,
         message: "Room created successfully",
-        data: item
+        data: roomItem
       });
     } catch (error) {
       return handlers.response.error({
@@ -125,15 +119,15 @@ class RoomService {
     }
   }
 
-  // Get a room by ID and CreationDate
+  // Get a room by ID
   async getRoom(req, res) {
-    const { roomId, creationDate } = req.params;
+    const { projectId, roomId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        RoomId: roomId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `ROOM#${roomId}`
       }
     };
 
@@ -160,20 +154,20 @@ class RoomService {
     }
   }
 
-  // List all rooms for a project (without pagination)
+  // List all rooms for a project
   async getRooms(req, res) {
     const { projectId } = req.query;
 
     const params = {
       TableName: this.tableName,
-      FilterExpression: "ProjectId = :projectId",
+      KeyConditionExpression: "PK = :pk",
       ExpressionAttributeValues: {
-        ":projectId": projectId
+        ":pk": `PROJECT#${projectId}`
       }
     };
 
     try {
-      const result = await docClient.scan(params).promise();
+      const result = await docClient.query(params).promise();
 
       return handlers.response.success({
         res,
@@ -188,9 +182,9 @@ class RoomService {
     }
   }
 
-  // Update room details (including video upload)
+  // Update room details (including video URL)
   async updateRoom(req, res) {
-    const { roomId, creationDate } = req.params;
+    const { projectId, roomId } = req.params;
     const { name, description, totalInventories, videoUrl } = req.body;
 
     const updateExpression = [];
@@ -226,8 +220,8 @@ class RoomService {
     const params = {
       TableName: this.tableName,
       Key: {
-        RoomId: roomId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `ROOM#${roomId}`
       },
       UpdateExpression: `SET ${updateExpression.join(", ")}`,
       ExpressionAttributeValues: expressionAttributeValues,
@@ -252,13 +246,13 @@ class RoomService {
 
   // Delete a room
   async deleteRoom(req, res) {
-    const { roomId, creationDate } = req.params;
+    const { projectId, roomId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        RoomId: roomId,
-        CreationDate: creationDate
+        PK: `PROJECT#${projectId}`,
+        SK: `ROOM#${roomId}`
       }
     };
 
