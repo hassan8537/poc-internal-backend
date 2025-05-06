@@ -1,10 +1,12 @@
 const { handlers } = require("../utilities/handlers/handlers");
-const { docClient } = require("../config/dynamodb"); // Ensure this exports an initialized DocumentClient
+const { docClient } = require("../config/dynamodb");
 const { v4: uuidv4 } = require("uuid");
 
 class ProjectService {
   constructor() {
     this.tableName = "InventoryManagement";
+    this.staticPK = "USER#123"; // Static partition key
+
     this.updatedLocation = (location) => {
       if (
         !location ||
@@ -26,19 +28,26 @@ class ProjectService {
     };
   }
 
-  // Create a new project
   async createProject(req, res) {
     const { name, location } = req.body;
 
+    if (!name || !location) {
+      return handlers.response.error({
+        res,
+        message: "Both 'name' and 'location' are required"
+      });
+    }
+
     const projectId = uuidv4();
-    const creationDate = new Date().toISOString();
+    const createdAt = new Date().toISOString();
 
     const item = {
-      PK: `PROJECT#${projectId}`,
+      PK: this.staticPK,
       SK: `PROJECT#${projectId}`,
       EntityType: "Project",
+      ProjectId: projectId,
       Name: name,
-      CreationDate: creationDate,
+      CreatedAt: createdAt,
       Location: this.updatedLocation(location)
     };
 
@@ -63,20 +72,27 @@ class ProjectService {
     }
   }
 
-  // Get a project by ID and creationDate
   async getProject(req, res) {
     const { projectId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        PK: `PROJECT#${projectId}`,
+        PK: this.staticPK,
         SK: `PROJECT#${projectId}`
       }
     };
 
     try {
       const result = await docClient.get(params).promise();
+
+      if (!result.Item) {
+        return handlers.response.failed({
+          res,
+          message: "Invalid project ID"
+        });
+      }
+
       return handlers.response.success({
         res,
         message: "Project fetched successfully",
@@ -91,18 +107,30 @@ class ProjectService {
     }
   }
 
-  // List all projects without pagination (takes limit from request)
   async getProjects(req, res) {
     const { limit = 10, lastEvaluatedKey = null } = req.query;
 
     const params = {
       TableName: this.tableName,
+      KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
+      ExpressionAttributeValues: {
+        ":pk": this.staticPK,
+        ":skPrefix": "PROJECT#"
+      },
       Limit: parseInt(limit),
       ExclusiveStartKey: lastEvaluatedKey || undefined
     };
 
     try {
       const result = await docClient.query(params).promise();
+
+      if (!result.Items.length) {
+        return handlers.response.unavailable({
+          res,
+          message: "No projects yet"
+        });
+      }
+
       return handlers.response.success({
         res,
         message: "Projects fetched successfully",
@@ -118,11 +146,36 @@ class ProjectService {
     }
   }
 
-  // Update project name or location (takes parameters from req)
   async updateProject(req, res) {
-    const { projectId } = req.params; // Make sure both are provided
+    const { projectId } = req.params;
     const { name, location } = req.body;
 
+    // Step 1: Check if the project exists
+    const getParams = {
+      TableName: this.tableName,
+      Key: {
+        PK: this.staticPK,
+        SK: `PROJECT#${projectId}`
+      }
+    };
+
+    try {
+      const existing = await docClient.get(getParams).promise();
+      if (!existing.Item) {
+        return handlers.response.failed({
+          res,
+          message: "Invalid project ID"
+        });
+      }
+    } catch (err) {
+      return handlers.response.error({
+        res,
+        message: "Error checking project existence",
+        error: err.message
+      });
+    }
+
+    // Step 2: Prepare update expression
     const updateExpression = [];
     const expressionAttributeValues = {};
     const expressionAttributeNames = {};
@@ -134,8 +187,9 @@ class ProjectService {
     }
 
     if (location) {
-      updateExpression.push("Location = :location");
+      updateExpression.push("#location = :location");
       expressionAttributeValues[":location"] = this.updatedLocation(location);
+      expressionAttributeNames["#location"] = "Location";
     }
 
     if (updateExpression.length === 0) {
@@ -145,10 +199,10 @@ class ProjectService {
       });
     }
 
-    const params = {
+    const updateParams = {
       TableName: this.tableName,
       Key: {
-        PK: `PROJECT#${projectId}`,
+        PK: this.staticPK,
         SK: `PROJECT#${projectId}`
       },
       UpdateExpression: `SET ${updateExpression.join(", ")}`,
@@ -160,34 +214,43 @@ class ProjectService {
     };
 
     try {
-      const result = await docClient.update(params).promise();
-
+      const result = await docClient.update(updateParams).promise();
       return handlers.response.success({
         res,
         message: "Project updated successfully",
         data: result.Attributes
       });
     } catch (error) {
+      console.error(error);
+
       return handlers.response.error({
         res,
-        message: error.message
+        message: "Error updating project",
+        error: error.message
       });
     }
   }
 
-  // Delete a project (takes parameters from req)
   async deleteProject(req, res) {
     const { projectId } = req.params;
 
     const params = {
       TableName: this.tableName,
       Key: {
-        PK: `PROJECT#${projectId}`,
+        PK: this.staticPK,
         SK: `PROJECT#${projectId}`
       }
     };
 
     try {
+      const existing = await docClient.get(params).promise();
+      if (!existing.Item) {
+        return handlers.response.failed({
+          res,
+          message: "Invalid project ID"
+        });
+      }
+
       await docClient.delete(params).promise();
       return handlers.response.success({
         res,

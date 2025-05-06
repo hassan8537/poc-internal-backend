@@ -12,6 +12,6 @@ const apiVersion = process.env.API_VERSION;
 
 // 🔹 Register Routes
 app.use(`/api/${apiVersion}/projects`, projectRoutes);
-app.use(`/api/${apiVersion}/rooms`, roomRoutes);
+app.use(`/api/${apiVersion}/projects`, roomRoutes);
 
 module.exports = app;

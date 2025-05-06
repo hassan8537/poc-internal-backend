@@ -5,11 +5,57 @@ const fs = require("fs");
 
 class RoomService {
   constructor() {
-    this.tableName = "Rooms"; // Single table, but uses composite keys
-    this.s3BucketName = "uploads-476114132237"; // Set your S3 bucket name here
+    this.tableName = "InventoryManagement";
+    this.s3BucketName = "uploads-476114132237";
+    this.userPK = "USER#123";
   }
 
-  // Upload a video to S3
+  async validateProject(projectId, res) {
+    if (!projectId) {
+      handlers.response.error({ res, message: "Project ID is required" });
+      return false;
+    }
+
+    const projectKey = {
+      PK: this.userPK,
+      SK: `PROJECT#${projectId}`
+    };
+
+    const project = await docClient
+      .get({ TableName: this.tableName, Key: projectKey })
+      .promise();
+
+    if (!project.Item) {
+      handlers.response.error({ res, message: "Invalid project ID" });
+      return false;
+    }
+
+    return true;
+  }
+
+  async validateRoom(projectId, roomId, res) {
+    if (!roomId) {
+      handlers.response.error({ res, message: "Room ID is required" });
+      return false;
+    }
+
+    const roomKey = {
+      PK: this.userPK,
+      SK: `PROJECT#${projectId}#ROOM#${roomId}`
+    };
+
+    const room = await docClient
+      .get({ TableName: this.tableName, Key: roomKey })
+      .promise();
+
+    if (!room.Item) {
+      handlers.response.error({ res, message: "Invalid room ID" });
+      return false;
+    }
+
+    return true;
+  }
+
   async uploadVideoToS3(req, res) {
     const file = req.files?.videos?.[0];
 
@@ -21,90 +67,75 @@ class RoomService {
     }
 
     const localFilePath = file.path;
-    const fileKey = `rooms/${uuidv4()}.mp4`; // Unique key for S3 video
-
-    fs.readFile(localFilePath, async (err, data) => {
-      if (err) {
-        return handlers.response.error({
-          res,
-          message: "Failed to read the file",
-          error: err.message
-        });
-      }
-
-      const params = {
-        Bucket: this.s3BucketName,
-        Key: fileKey,
-        Body: data,
-        ContentType: file.mimetype,
-        ACL: "public-read"
-      };
-
-      try {
-        const uploadResult = await s3.upload(params).promise();
-
-        fs.unlink(localFilePath, (err) => {
-          if (err) {
-            console.error("Failed to delete local file:", err);
-          }
-        });
-
-        return handlers.response.success({
-          res,
-          message: "Video uploaded successfully",
-          data: { url: uploadResult.Location }
-        });
-      } catch (error) {
-        console.error(error);
-        fs.unlink(localFilePath, (err) => {
-          if (err) {
-            console.error("Failed to delete local file:", err);
-          }
-        });
-
-        return handlers.response.error({
-          res,
-          message: "Failed to upload video to S3",
-          error: error.message
-        });
-      }
-    });
-  }
-
-  // Create a new room (video URL will be passed from the upload API)
-  async createRoom(req, res) {
-    const { projectId, name, description, totalInventories, videoUrl } =
-      req.body;
-
-    if (!videoUrl) {
-      return handlers.response.error({
-        res,
-        message: "Video URL is required"
-      });
-    }
-
-    const roomId = uuidv4();
-    const creationDate = new Date().toISOString();
-
-    const roomItem = {
-      PK: `PROJECT#${projectId}`,
-      SK: `ROOM#${roomId}`,
-      EntityType: "Room",
-      RoomId: roomId,
-      Name: name,
-      Description: description,
-      Video: videoUrl,
-      TotalInventories: totalInventories,
-      CreationDate: creationDate
-    };
+    const fileKey = `${uuidv4()}.mp4`;
 
     const params = {
-      TableName: this.tableName,
-      Item: roomItem
+      Bucket: this.s3BucketName,
+      Key: fileKey,
+      Body: fs.createReadStream(file.path),
+      ContentType: file.mimetype,
+      PartSize: 5 * 1024 * 1024,
+      QueueSize: 20
     };
 
     try {
-      await docClient.put(params).promise();
+      const uploadResult = await s3.upload(params).promise();
+
+      fs.unlink(localFilePath, (err) => {
+        if (err) console.error("Failed to delete local file:", err);
+      });
+
+      return handlers.response.success({
+        res,
+        message: "Video uploaded successfully",
+        data: { url: uploadResult.Location }
+      });
+    } catch (err) {
+      fs.unlink(localFilePath, () => {});
+      handlers.logger.error({ message: err.message });
+      return handlers.response.error({
+        res,
+        message: "Failed to upload video to S3",
+        error: err.message
+      });
+    }
+  }
+
+  async createRoom(req, res) {
+    const { projectId, name, description, accessories, videoUrl } = req.body;
+
+    if (!projectId || !videoUrl) {
+      return handlers.response.error({
+        res,
+        message: !projectId ? "Project ID is required" : "Video URL is required"
+      });
+    }
+
+    if (!(await this.validateProject(projectId, res))) return;
+
+    try {
+      const roomId = uuidv4();
+      const createdAt = new Date().toISOString();
+
+      const roomItem = {
+        PK: this.userPK,
+        SK: `PROJECT#${projectId}#ROOM#${roomId}`,
+        EntityType: "Room",
+        ProjectId: projectId,
+        RoomId: roomId,
+        Name: name,
+        Description: description,
+        Video: videoUrl,
+        Accessories: accessories,
+        CreatedAt: createdAt
+      };
+
+      await docClient
+        .put({
+          TableName: this.tableName,
+          Item: roomItem
+        })
+        .promise();
 
       return handlers.response.success({
         res,
@@ -112,33 +143,37 @@ class RoomService {
         data: roomItem
       });
     } catch (error) {
-      return handlers.response.error({
-        res,
-        message: error.message
-      });
+      return handlers.response.error({ res, message: error.message });
     }
   }
 
-  // Get a room by ID
   async getRoom(req, res) {
     const { projectId, roomId } = req.params;
 
-    const params = {
-      TableName: this.tableName,
-      Key: {
-        PK: `PROJECT#${projectId}`,
-        SK: `ROOM#${roomId}`
-      }
-    };
+    if (!projectId || !roomId) {
+      return handlers.response.error({
+        res,
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
+    }
+
+    if (!(await this.validateProject(projectId, res))) return;
+
+    if (!(await this.validateRoom(projectId, roomId, res))) return;
 
     try {
-      const result = await docClient.get(params).promise();
+      const result = await docClient
+        .get({
+          TableName: this.tableName,
+          Key: {
+            PK: this.userPK,
+            SK: `PROJECT#${projectId}#ROOM#${roomId}`
+          }
+        })
+        .promise();
 
       if (!result.Item) {
-        return handlers.response.error({
-          res,
-          message: "Room not found"
-        });
+        return handlers.response.failed({ res, message: "Invalid room ID" });
       }
 
       return handlers.response.success({
@@ -147,27 +182,40 @@ class RoomService {
         data: result.Item
       });
     } catch (error) {
-      return handlers.response.error({
-        res,
-        message: error.message
-      });
+      return handlers.response.error({ res, message: error.message });
     }
   }
 
-  // List all rooms for a project
   async getRooms(req, res) {
-    const { projectId } = req.query;
+    const { projectId } = req.params;
 
-    const params = {
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk",
-      ExpressionAttributeValues: {
-        ":pk": `PROJECT#${projectId}`
-      }
-    };
+    if (!projectId) {
+      return handlers.response.error({
+        res,
+        message: "Project ID is required"
+      });
+    }
+
+    if (!(await this.validateProject(projectId, res))) return;
 
     try {
-      const result = await docClient.query(params).promise();
+      const result = await docClient
+        .query({
+          TableName: this.tableName,
+          KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+          ExpressionAttributeValues: {
+            ":pk": this.userPK,
+            ":skPrefix": `PROJECT#${projectId}#ROOM#`
+          }
+        })
+        .promise();
+
+      if (!result.Items.length) {
+        return handlers.response.unavailable({
+          res,
+          message: "No rooms yet"
+        });
+      }
 
       return handlers.response.success({
         res,
@@ -175,61 +223,70 @@ class RoomService {
         data: result.Items
       });
     } catch (error) {
-      return handlers.response.error({
-        res,
-        message: error.message
-      });
+      return handlers.response.error({ res, message: error.message });
     }
   }
 
-  // Update room details (including video URL)
   async updateRoom(req, res) {
     const { projectId, roomId } = req.params;
-    const { name, description, totalInventories, videoUrl } = req.body;
+    const { name, description, accessories, videoUrl } = req.body;
 
-    const updateExpression = [];
-    const expressionAttributeValues = {};
+    if (!projectId || !roomId) {
+      return handlers.response.error({
+        res,
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
+    }
+
+    if (!(await this.validateProject(projectId, res))) return;
+
+    if (!(await this.validateRoom(projectId, roomId, res))) return;
+
+    const updates = [];
+    const exprValues = {};
+    const exprNames = {};
 
     if (name) {
-      updateExpression.push("Name = :name");
-      expressionAttributeValues[":name"] = name;
+      updates.push("#N = :name");
+      exprNames["#N"] = "Name";
+      exprValues[":name"] = name;
     }
-
     if (description) {
-      updateExpression.push("Description = :description");
-      expressionAttributeValues[":description"] = description;
+      updates.push("Description = :desc");
+      exprValues[":desc"] = description;
     }
-
-    if (totalInventories) {
-      updateExpression.push("TotalInventories = :totalInventories");
-      expressionAttributeValues[":totalInventories"] = totalInventories;
-    }
-
     if (videoUrl) {
-      updateExpression.push("Video = :video");
-      expressionAttributeValues[":video"] = videoUrl;
+      updates.push("Video = :video");
+      exprValues[":video"] = videoUrl;
+    }
+    if (accessories) {
+      updates.push("Accessories = :acc");
+      exprValues[":acc"] = accessories;
     }
 
-    if (updateExpression.length === 0) {
+    if (updates.length === 0) {
       return handlers.response.error({
         res,
         message: "No updates provided"
       });
     }
 
-    const params = {
-      TableName: this.tableName,
-      Key: {
-        PK: `PROJECT#${projectId}`,
-        SK: `ROOM#${roomId}`
-      },
-      UpdateExpression: `SET ${updateExpression.join(", ")}`,
-      ExpressionAttributeValues: expressionAttributeValues,
-      ReturnValues: "ALL_NEW"
-    };
-
     try {
-      const result = await docClient.update(params).promise();
+      const result = await docClient
+        .update({
+          TableName: this.tableName,
+          Key: {
+            PK: this.userPK,
+            SK: `PROJECT#${projectId}#ROOM#${roomId}`
+          },
+          UpdateExpression: `SET ${updates.join(", ")}`,
+          ExpressionAttributeValues: exprValues,
+          ExpressionAttributeNames: Object.keys(exprNames).length
+            ? exprNames
+            : undefined,
+          ReturnValues: "ALL_NEW"
+        })
+        .promise();
 
       return handlers.response.success({
         res,
@@ -237,37 +294,41 @@ class RoomService {
         data: result.Attributes
       });
     } catch (error) {
-      return handlers.response.error({
-        res,
-        message: error.message
-      });
+      return handlers.response.error({ res, message: error.message });
     }
   }
 
-  // Delete a room
   async deleteRoom(req, res) {
     const { projectId, roomId } = req.params;
 
-    const params = {
-      TableName: this.tableName,
-      Key: {
-        PK: `PROJECT#${projectId}`,
-        SK: `ROOM#${roomId}`
-      }
-    };
+    if (!projectId || !roomId) {
+      return handlers.response.error({
+        res,
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
+    }
+
+    if (!(await this.validateProject(projectId, res))) return;
+
+    if (!(await this.validateRoom(projectId, roomId, res))) return;
 
     try {
-      await docClient.delete(params).promise();
+      await docClient
+        .delete({
+          TableName: this.tableName,
+          Key: {
+            PK: this.userPK,
+            SK: `PROJECT#${projectId}#ROOM#${roomId}`
+          }
+        })
+        .promise();
 
       return handlers.response.success({
         res,
         message: "Room deleted successfully"
       });
     } catch (error) {
-      return handlers.response.error({
-        res,
-        message: error.message
-      });
+      return handlers.response.error({ res, message: error.message });
     }
   }
 }

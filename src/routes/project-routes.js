@@ -4,20 +4,17 @@ const projectController = require("../controllers/project-controller"); // Assum
 
 router.post("", projectController.createProject.bind(projectController));
 
-router.get(
-  "/:projectId/:creationDate",
-  projectController.getProject.bind(projectController)
-);
+router.get("/:projectId", projectController.getProject.bind(projectController));
 
 router.get("/", projectController.getProjects.bind(projectController));
 
 router.put(
-  "/:projectId/:creationDate",
+  "/:projectId",
   projectController.updateProject.bind(projectController)
 );
 
 router.delete(
-  "/:projectId/:creationDate",
+  "/:projectId",
   projectController.deleteProject.bind(projectController)
 );
 

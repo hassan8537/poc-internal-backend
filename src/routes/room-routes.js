@@ -4,27 +4,27 @@ const roomController = require("../controllers/room-controller");
 const upload = require("../middlewares/multer-middleware");
 
 router.post(
-  "/uploads",
+  "/rooms/uploads",
   upload.fields([{ name: "videos" }]),
   roomController.uploadVideoToS3.bind(roomController)
 );
 
-router.post("/", roomController.createRoom.bind(roomController));
+router.post("/rooms", roomController.createRoom.bind(roomController));
 
 router.get(
-  "/:roomId/:creationDate",
+  "/:projectId/rooms/:roomId",
   roomController.getRoom.bind(roomController)
 );
 
-router.get("/", roomController.getRooms.bind(roomController));
+router.get("/:projectId/rooms", roomController.getRooms.bind(roomController));
 
 router.put(
-  "/:roomId/:creationDate",
+  "/:projectId/rooms/:roomId",
   roomController.updateRoom.bind(roomController)
 );
 
 router.delete(
-  "/:roomId/:creationDate",
+  "/:projectId/rooms/:roomId",
   roomController.deleteRoom.bind(roomController)
 );
 
