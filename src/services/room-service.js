@@ -75,7 +75,8 @@ class RoomService {
       Body: fs.createReadStream(file.path),
       ContentType: file.mimetype,
       PartSize: 5 * 1024 * 1024,
-      QueueSize: 20
+      QueueSize: 20,
+      ACL: "public-read"
     };
 
     try {
@@ -203,9 +204,11 @@ class RoomService {
         .query({
           TableName: this.tableName,
           KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+          FilterExpression: "EntityType = :entityType",
           ExpressionAttributeValues: {
             ":pk": this.userPK,
-            ":skPrefix": `PROJECT#${projectId}#ROOM#`
+            ":skPrefix": `PROJECT#${projectId}#ROOM#`,
+            ":entityType": "Room"
           }
         })
         .promise();

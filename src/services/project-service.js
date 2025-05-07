@@ -115,8 +115,10 @@ class ProjectService {
       KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
       ExpressionAttributeValues: {
         ":pk": this.staticPK,
-        ":skPrefix": "PROJECT#"
+        ":skPrefix": "PROJECT#",
+        ":entityType": "Project"
       },
+      FilterExpression: "EntityType = :entityType",
       Limit: parseInt(limit),
       ExclusiveStartKey: lastEvaluatedKey || undefined
     };
