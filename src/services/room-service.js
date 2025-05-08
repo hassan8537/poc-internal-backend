@@ -12,7 +12,7 @@ class RoomService {
 
   async validateProject(projectId, res) {
     if (!projectId) {
-      handlers.response.error({ res, message: "Project ID is required" });
+      handlers.response.failed({ res, message: "Project ID is required" });
       return false;
     }
 
@@ -26,7 +26,7 @@ class RoomService {
       .promise();
 
     if (!project.Item) {
-      handlers.response.error({ res, message: "Invalid project ID" });
+      handlers.response.failed({ res, message: "Invalid project ID" });
       return false;
     }
 
@@ -35,7 +35,7 @@ class RoomService {
 
   async validateRoom(projectId, roomId, res) {
     if (!roomId) {
-      handlers.response.error({ res, message: "Room ID is required" });
+      handlers.response.failed({ res, message: "Room ID is required" });
       return false;
     }
 
@@ -49,7 +49,7 @@ class RoomService {
       .promise();
 
     if (!room.Item) {
-      handlers.response.error({ res, message: "Invalid room ID" });
+      handlers.response.failed({ res, message: "Invalid room ID" });
       return false;
     }
 
@@ -60,7 +60,7 @@ class RoomService {
     const file = req.files?.videos?.[0];
 
     if (!file) {
-      return handlers.response.error({
+      return handlers.response.failed({
         res,
         message: "No video file provided"
       });
@@ -93,11 +93,10 @@ class RoomService {
       });
     } catch (err) {
       fs.unlink(localFilePath, () => {});
-      handlers.logger.error({ message: err.message });
+      handlers.logger.error({ message: err });
       return handlers.response.error({
         res,
-        message: "Failed to upload video to S3",
-        error: err.message
+        message: "Failed to upload video to S3"
       });
     }
   }
@@ -144,7 +143,8 @@ class RoomService {
         data: roomItem
       });
     } catch (error) {
-      return handlers.response.error({ res, message: error.message });
+      handlers.logger.error({ message: error });
+      return handlers.response.error({ res, message: "Failed to create room" });
     }
   }
 
@@ -183,7 +183,8 @@ class RoomService {
         data: result.Item
       });
     } catch (error) {
-      return handlers.response.error({ res, message: error.message });
+      handlers.logger.error({ message: error });
+      return handlers.response.error({ res, message: "Failed to fetch room" });
     }
   }
 
@@ -214,7 +215,7 @@ class RoomService {
         .promise();
 
       if (!result.Items.length) {
-        return handlers.response.unavailable({
+        return handlers.response.success({
           res,
           message: "No rooms yet"
         });
@@ -226,7 +227,11 @@ class RoomService {
         data: result.Items
       });
     } catch (error) {
-      return handlers.response.error({ res, message: error.message });
+      handlers.logger.error({ message: error });
+      return handlers.response.error({
+        res,
+        message: "Failed to fetch rooms"
+      });
     }
   }
 
@@ -268,7 +273,7 @@ class RoomService {
     }
 
     if (updates.length === 0) {
-      return handlers.response.error({
+      return handlers.response.failed({
         res,
         message: "No updates provided"
       });
@@ -297,7 +302,8 @@ class RoomService {
         data: result.Attributes
       });
     } catch (error) {
-      return handlers.response.error({ res, message: error.message });
+      handlers.logger.error({ message: error });
+      return handlers.response.error({ res, message: "Failed to update room" });
     }
   }
 
@@ -331,7 +337,8 @@ class RoomService {
         message: "Room deleted successfully"
       });
     } catch (error) {
-      return handlers.response.error({ res, message: error.message });
+      handlers.logger.error({ message: error });
+      return handlers.response.error({ res, message: "Failed to delete room" });
     }
   }
 }

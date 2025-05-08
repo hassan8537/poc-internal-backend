@@ -64,10 +64,12 @@ class ProjectService {
         data: item
       });
     } catch (error) {
+      handlers.logger.error({
+        message: error
+      });
       return handlers.response.error({
         res,
-        message: "Error creating project",
-        error: error.message
+        message: "Error creating project"
       });
     }
   }
@@ -99,10 +101,12 @@ class ProjectService {
         data: result.Item
       });
     } catch (error) {
+      handlers.logger.error({
+        message: error
+      });
       return handlers.response.error({
         res,
-        message: "Error fetching project",
-        error: error.message
+        message: "Error fetching project"
       });
     }
   }
@@ -127,7 +131,7 @@ class ProjectService {
       const result = await docClient.query(params).promise();
 
       if (!result.Items.length) {
-        return handlers.response.unavailable({
+        return handlers.response.success({
           res,
           message: "No projects yet"
         });
@@ -140,10 +144,12 @@ class ProjectService {
         nextKey: result.LastEvaluatedKey || null
       });
     } catch (error) {
+      handlers.logger.error({
+        message: error
+      });
       return handlers.response.error({
         res,
-        message: "Error listing projects",
-        error: error.message
+        message: "Error listing projects"
       });
     }
   }
@@ -172,8 +178,7 @@ class ProjectService {
     } catch (err) {
       return handlers.response.error({
         res,
-        message: "Error checking project existence",
-        error: err.message
+        message: "Error checking project existence"
       });
     }
 
@@ -195,7 +200,7 @@ class ProjectService {
     }
 
     if (updateExpression.length === 0) {
-      return handlers.response.error({
+      return handlers.response.failed({
         res,
         message: "No updates provided"
       });
@@ -223,12 +228,12 @@ class ProjectService {
         data: result.Attributes
       });
     } catch (error) {
-      console.error(error);
-
+      handlers.logger.error({
+        message: error
+      });
       return handlers.response.error({
         res,
-        message: "Error updating project",
-        error: error.message
+        message: "Error updating project"
       });
     }
   }
@@ -259,10 +264,12 @@ class ProjectService {
         message: "Project deleted successfully"
       });
     } catch (error) {
+      handlers.logger.error({
+        message: error
+      });
       return handlers.response.error({
         res,
-        message: "Error deleting project",
-        error: error.message
+        message: "Error deleting project"
       });
     }
   }
