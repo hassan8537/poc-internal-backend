@@ -124,6 +124,8 @@ class RoomService {
         ProjectId: projectId,
         RoomId: roomId,
         Name: name,
+        Image:
+          "https://images.unsplash.com/photo-1692803629992-90acbafd964d?q=80&w=2736&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
         Description: description,
         Video: videoUrl,
         Accessories: accessories,
