@@ -7,25 +7,25 @@ class ProjectService {
     this.tableName = "InventoryManagement";
     this.staticPK = "USER#123"; // Static partition key
 
-    this.updatedLocation = (location) => {
-      if (
-        !location ||
-        typeof location.name !== "string" ||
-        !location.coordinates ||
-        typeof location.coordinates.latitude !== "number" ||
-        typeof location.coordinates.longitude !== "number"
-      ) {
-        return "Invalid location";
-      }
+    // this.updatedLocation = (location) => {
+    //   if (
+    //     !location ||
+    //     typeof location.name !== "string" ||
+    //     !location.coordinates ||
+    //     typeof location.coordinates.latitude !== "number" ||
+    //     typeof location.coordinates.longitude !== "number"
+    //   ) {
+    //     return "Invalid location";
+    //   }
 
-      return {
-        Name: location.name,
-        Coordinates: {
-          Latitude: location.coordinates.latitude,
-          Longitude: location.coordinates.longitude
-        }
-      };
-    };
+    //   return {
+    //     Name: location.name,
+    //     Coordinates: {
+    //       Latitude: location.coordinates.latitude,
+    //       Longitude: location.coordinates.longitude
+    //     }
+    //   };
+    // };
   }
 
   async createProject(req, res) {
@@ -48,7 +48,7 @@ class ProjectService {
       ProjectId: projectId,
       Name: name,
       CreatedAt: createdAt,
-      Location: this.updatedLocation(location)
+      Location: location
     };
 
     const params = {
@@ -190,7 +190,7 @@ class ProjectService {
 
     if (location) {
       updateExpression.push("#location = :location");
-      expressionAttributeValues[":location"] = this.updatedLocation(location);
+      expressionAttributeValues[":location"] = location;
       expressionAttributeNames["#location"] = "Location";
     }
 
