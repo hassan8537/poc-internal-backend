@@ -32,7 +32,11 @@ class ProjectService {
     const { name, location } = req.body;
 
     if (!name || !location) {
-      return handlers.response.error({
+      handlers.logger.failed({
+        message: "Both 'name' and 'location' are required"
+      });
+
+      return handlers.response.failed({
         res,
         message: "Both 'name' and 'location' are required"
       });
@@ -58,6 +62,12 @@ class ProjectService {
 
     try {
       await docClient.put(params).promise();
+
+      handlers.logger.success({
+        message: "Project created successfully",
+        data: item
+      });
+
       return handlers.response.success({
         res,
         message: "Project created successfully",
@@ -89,11 +99,20 @@ class ProjectService {
       const result = await docClient.get(params).promise();
 
       if (!result.Item) {
+        handlers.logger.failed({
+          message: "Invalid project ID"
+        });
+
         return handlers.response.failed({
           res,
           message: "Invalid project ID"
         });
       }
+
+      handlers.logger.success({
+        message: "Project fetched successfully",
+        data: result.Item
+      });
 
       return handlers.response.success({
         res,
@@ -131,11 +150,21 @@ class ProjectService {
       const result = await docClient.query(params).promise();
 
       if (!result.Items.length) {
+        handlers.logger.success({
+          message: "No projects yet"
+        });
+
         return handlers.response.success({
           res,
           message: "No projects yet"
         });
       }
+
+      handlers.logger.success({
+        message: "Projects fetched successfully",
+        data: result.Items,
+        nextKey: result.LastEvaluatedKey || null
+      });
 
       return handlers.response.success({
         res,
@@ -170,12 +199,20 @@ class ProjectService {
     try {
       const existing = await docClient.get(getParams).promise();
       if (!existing.Item) {
+        handlers.logger.failed({
+          message: "Invalid project ID"
+        });
+
         return handlers.response.failed({
           res,
           message: "Invalid project ID"
         });
       }
     } catch (err) {
+      handlers.logger.error({
+        message: "Error checking project existence"
+      });
+
       return handlers.response.error({
         res,
         message: "Error checking project existence"
@@ -200,6 +237,10 @@ class ProjectService {
     }
 
     if (updateExpression.length === 0) {
+      handlers.logger.failed({
+        message: "No updates provided"
+      });
+
       return handlers.response.failed({
         res,
         message: "No updates provided"
@@ -222,6 +263,12 @@ class ProjectService {
 
     try {
       const result = await docClient.update(updateParams).promise();
+
+      handlers.logger.success({
+        message: "Project updated successfully",
+        data: result.Attributes
+      });
+
       return handlers.response.success({
         res,
         message: "Project updated successfully",
@@ -252,6 +299,9 @@ class ProjectService {
     try {
       const existing = await docClient.get(params).promise();
       if (!existing.Item) {
+        handlers.logger.failed({
+          message: "Invalid project ID"
+        });
         return handlers.response.failed({
           res,
           message: "Invalid project ID"
@@ -259,6 +309,10 @@ class ProjectService {
       }
 
       await docClient.delete(params).promise();
+
+      handlers.logger.success({
+        message: "Project deleted successfully"
+      });
       return handlers.response.success({
         res,
         message: "Project deleted successfully"

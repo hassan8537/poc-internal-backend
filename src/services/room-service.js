@@ -12,6 +12,7 @@ class RoomService {
 
   async validateProject(projectId, res) {
     if (!projectId) {
+      handlers.logger.failed({ message: "Project ID is required" });
       handlers.response.failed({ res, message: "Project ID is required" });
       return false;
     }
@@ -26,6 +27,7 @@ class RoomService {
       .promise();
 
     if (!project.Item) {
+      handlers.logger.failed({ message: "Project ID is required" });
       handlers.response.failed({ res, message: "Invalid project ID" });
       return false;
     }
@@ -35,6 +37,7 @@ class RoomService {
 
   async validateRoom(projectId, roomId, res) {
     if (!roomId) {
+      handlers.logger.failed({ message: "Room ID is required" });
       handlers.response.failed({ res, message: "Room ID is required" });
       return false;
     }
@@ -49,6 +52,7 @@ class RoomService {
       .promise();
 
     if (!room.Item) {
+      handlers.logger.failed({ message: "Invalid room ID" });
       handlers.response.failed({ res, message: "Invalid room ID" });
       return false;
     }
@@ -60,6 +64,9 @@ class RoomService {
     const file = req.files?.videos?.[0];
 
     if (!file) {
+      handlers.logger.failed({
+        message: "No video file provided"
+      });
       return handlers.response.failed({
         res,
         message: "No video file provided"
@@ -86,6 +93,11 @@ class RoomService {
         if (err) console.error("Failed to delete local file:", err);
       });
 
+      handlers.logger.success({
+        message: "Video uploaded successfully",
+        data: { url: uploadResult.Location }
+      });
+
       return handlers.response.success({
         res,
         message: "Video uploaded successfully",
@@ -105,7 +117,10 @@ class RoomService {
     const { projectId, name, description, accessories, videoUrl } = req.body;
 
     if (!projectId || !videoUrl) {
-      return handlers.response.error({
+      handlers.logger.failed({
+        message: !projectId ? "Project ID is required" : "Video URL is required"
+      });
+      return handlers.response.failed({
         res,
         message: !projectId ? "Project ID is required" : "Video URL is required"
       });
@@ -139,6 +154,11 @@ class RoomService {
         })
         .promise();
 
+      handlers.logger.success({
+        message: "Room created successfully",
+        data: roomItem
+      });
+
       return handlers.response.success({
         res,
         message: "Room created successfully",
@@ -154,7 +174,10 @@ class RoomService {
     const { projectId, roomId } = req.params;
 
     if (!projectId || !roomId) {
-      return handlers.response.error({
+      handlers.logger.failed({
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
+      return handlers.response.failed({
         res,
         message: !projectId ? "Project ID is required" : "Room ID is required"
       });
@@ -176,8 +199,14 @@ class RoomService {
         .promise();
 
       if (!result.Item) {
+        handlers.logger.failed({ message: "Invalid room ID" });
         return handlers.response.failed({ res, message: "Invalid room ID" });
       }
+
+      handlers.logger.success({
+        message: "Room fetched successfully",
+        data: result.Item
+      });
 
       return handlers.response.success({
         res,
@@ -194,6 +223,10 @@ class RoomService {
     const { projectId } = req.params;
 
     if (!projectId) {
+      handlers.logger.error({
+        message: "Project ID is required"
+      });
+
       return handlers.response.error({
         res,
         message: "Project ID is required"
@@ -217,12 +250,19 @@ class RoomService {
         .promise();
 
       if (!result.Items.length) {
+        handlers.logger.success({
+          message: "No rooms yet"
+        });
         return handlers.response.success({
           res,
           message: "No rooms yet"
         });
       }
 
+      handlers.logger.success({
+        message: "Rooms fetched successfully",
+        data: result.Items
+      });
       return handlers.response.success({
         res,
         message: "Rooms fetched successfully",
@@ -242,6 +282,9 @@ class RoomService {
     const { name, description, accessories, videoUrl } = req.body;
 
     if (!projectId || !roomId) {
+      handlers.logger.error({
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
       return handlers.response.error({
         res,
         message: !projectId ? "Project ID is required" : "Room ID is required"
@@ -275,6 +318,9 @@ class RoomService {
     }
 
     if (updates.length === 0) {
+      handlers.logger.failed({
+        message: "No updates provided"
+      });
       return handlers.response.failed({
         res,
         message: "No updates provided"
@@ -298,6 +344,10 @@ class RoomService {
         })
         .promise();
 
+      handlers.logger.success({
+        message: "Room updated successfully",
+        data: result.Attributes
+      });
       return handlers.response.success({
         res,
         message: "Room updated successfully",
@@ -313,6 +363,9 @@ class RoomService {
     const { projectId, roomId } = req.params;
 
     if (!projectId || !roomId) {
+      handlers.logger.error({
+        message: !projectId ? "Project ID is required" : "Room ID is required"
+      });
       return handlers.response.error({
         res,
         message: !projectId ? "Project ID is required" : "Room ID is required"
@@ -334,6 +387,9 @@ class RoomService {
         })
         .promise();
 
+      handlers.logger.success({
+        message: "Room deleted successfully"
+      });
       return handlers.response.success({
         res,
         message: "Room deleted successfully"
