@@ -132,50 +132,39 @@ class ProjectService {
 
   async getProjects(req, res) {
     const { limit = 10, lastEvaluatedKey = null } = req.query;
-
-    const params = {
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
-      ExpressionAttributeValues: {
-        ":pk": this.staticPK,
-        ":skPrefix": "PROJECT#",
-        ":entityType": "Project"
-      },
-      FilterExpression: "EntityType = :entityType",
-      Limit: parseInt(limit),
-      ExclusiveStartKey: lastEvaluatedKey || undefined
-    };
+    let fetchedItems = [];
+    let nextKey = lastEvaluatedKey || undefined;
 
     try {
-      const result = await docClient.query(params).promise();
+      while (fetchedItems.length < limit) {
+        const params = {
+          TableName: this.tableName,
+          KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
+          ExpressionAttributeValues: {
+            ":pk": this.staticPK,
+            ":skPrefix": "PROJECT#",
+            ":entityType": "Project"
+          },
+          FilterExpression: "EntityType = :entityType",
+          Limit: limit,
+          ExclusiveStartKey: nextKey
+        };
 
-      if (!result.Items.length) {
-        handlers.logger.success({
-          message: "No projects yet"
-        });
+        const result = await docClient.query(params).promise();
+        fetchedItems = [...fetchedItems, ...result.Items];
+        nextKey = result.LastEvaluatedKey;
 
-        return handlers.response.success({
-          res,
-          message: "No projects yet"
-        });
+        if (!nextKey) break;
       }
-
-      handlers.logger.success({
-        message: "Projects fetched successfully",
-        data: result.Items,
-        nextKey: result.LastEvaluatedKey || null
-      });
 
       return handlers.response.success({
         res,
         message: "Projects fetched successfully",
-        data: result.Items,
-        nextKey: result.LastEvaluatedKey || null
+        data: fetchedItems.slice(0, limit),
+        nextKey: nextKey || null
       });
     } catch (error) {
-      handlers.logger.error({
-        message: error
-      });
+      handlers.logger.error({ message: error });
       return handlers.response.error({
         res,
         message: "Error listing projects"
