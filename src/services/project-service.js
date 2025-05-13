@@ -131,12 +131,11 @@ class ProjectService {
   }
 
   async getProjects(req, res) {
-    const { limit = 10, lastEvaluatedKey = null } = req.query;
     let fetchedItems = [];
-    let nextKey = lastEvaluatedKey || undefined;
+    let nextKey = undefined;
 
     try {
-      while (fetchedItems.length < limit) {
+      do {
         const params = {
           TableName: this.tableName,
           KeyConditionExpression: "PK = :pk and begins_with(SK, :skPrefix)",
@@ -146,22 +145,24 @@ class ProjectService {
             ":entityType": "Project"
           },
           FilterExpression: "EntityType = :entityType",
-          Limit: limit,
           ExclusiveStartKey: nextKey
         };
 
         const result = await docClient.query(params).promise();
         fetchedItems = [...fetchedItems, ...result.Items];
         nextKey = result.LastEvaluatedKey;
+      } while (nextKey);
 
-        if (!nextKey) break;
-      }
+      // ✅ Sort by CreatedAt descending
+      fetchedItems.sort(
+        (a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)
+      );
 
       return handlers.response.success({
         res,
         message: "Projects fetched successfully",
-        data: fetchedItems.slice(0, limit),
-        nextKey: nextKey || null
+        data: fetchedItems,
+        nextKey: null
       });
     } catch (error) {
       handlers.logger.error({ message: error });

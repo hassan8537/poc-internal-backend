@@ -223,10 +223,7 @@ class RoomService {
     const { projectId } = req.params;
 
     if (!projectId) {
-      handlers.logger.error({
-        message: "Project ID is required"
-      });
-
+      handlers.logger.error({ message: "Project ID is required" });
       return handlers.response.error({
         res,
         message: "Project ID is required"
@@ -235,38 +232,48 @@ class RoomService {
 
     if (!(await this.validateProject(projectId, res))) return;
 
-    try {
-      const result = await docClient
-        .query({
-          TableName: this.tableName,
-          KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
-          FilterExpression: "EntityType = :entityType",
-          ExpressionAttributeValues: {
-            ":pk": this.userPK,
-            ":skPrefix": `PROJECT#${projectId}#ROOM#`,
-            ":entityType": "Room"
-          }
-        })
-        .promise();
+    let fetchedItems = [];
+    let nextKey = undefined;
 
-      if (!result.Items.length) {
-        handlers.logger.success({
-          message: "No rooms yet"
-        });
-        return handlers.response.success({
-          res,
-          message: "No rooms yet"
-        });
+    try {
+      // Fetch all pages
+      do {
+        const result = await docClient
+          .query({
+            TableName: this.tableName,
+            KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+            FilterExpression: "EntityType = :entityType",
+            ExpressionAttributeValues: {
+              ":pk": this.userPK,
+              ":skPrefix": `PROJECT#${projectId}#ROOM#`,
+              ":entityType": "Room"
+            },
+            ExclusiveStartKey: nextKey
+          })
+          .promise();
+
+        fetchedItems = [...fetchedItems, ...result.Items];
+        nextKey = result.LastEvaluatedKey;
+      } while (nextKey);
+
+      if (!fetchedItems.length) {
+        handlers.logger.success({ message: "No rooms yet" });
+        return handlers.response.success({ res, message: "No rooms yet" });
       }
+
+      // ✅ Sort by CreatedAt descending
+      fetchedItems.sort(
+        (a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)
+      );
 
       handlers.logger.success({
         message: "Rooms fetched successfully",
-        data: result.Items
+        data: fetchedItems
       });
       return handlers.response.success({
         res,
         message: "Rooms fetched successfully",
-        data: result.Items
+        data: fetchedItems
       });
     } catch (error) {
       handlers.logger.error({ message: error });
