@@ -2,11 +2,15 @@ const { handlers } = require("../utilities/handlers/handlers");
 const { docClient, s3 } = require("../config/dynamodb");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
+const {
+  generateAndUploadThumbnailFromS3Url
+} = require("../utilities/generators/thumbnail-generator");
 
 class RoomService {
   constructor() {
     this.tableName = "InventoryManagement";
-    this.s3BucketName = "uploads-476114132237";
+    this.s3VideoBucket = "uploads-476114132237";
+    this.s3ThumbnailBucket = "thumbnails-476114132237";
     this.userPK = "USER#123";
   }
 
@@ -77,7 +81,7 @@ class RoomService {
     const fileKey = `${uuidv4()}.mp4`;
 
     const params = {
-      Bucket: this.s3BucketName,
+      Bucket: this.s3VideoBucket,
       Key: fileKey,
       Body: fs.createReadStream(file.path),
       ContentType: file.mimetype,
@@ -132,6 +136,11 @@ class RoomService {
       const roomId = uuidv4();
       const createdAt = new Date().toISOString();
 
+      const thumbnail = await generateAndUploadThumbnailFromS3Url(
+        videoUrl,
+        this.s3ThumbnailBucket
+      );
+
       const roomItem = {
         PK: this.userPK,
         SK: `PROJECT#${projectId}#ROOM#${roomId}`,
@@ -143,6 +152,7 @@ class RoomService {
           "https://images.unsplash.com/photo-1692803629992-90acbafd964d?q=80&w=2736&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
         Description: description,
         Video: videoUrl,
+        Thumbnail: thumbnail,
         Accessories: accessories,
         CreatedAt: createdAt
       };
