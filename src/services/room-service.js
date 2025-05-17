@@ -5,6 +5,7 @@ const fs = require("fs");
 const {
   generateAndUploadThumbnailFromS3Url
 } = require("../utilities/generators/thumbnail-generator");
+const path = require("path");
 
 class RoomService {
   constructor() {
@@ -12,6 +13,7 @@ class RoomService {
     this.s3VideoBucket = "uploads-476114132237";
     this.s3ThumbnailBucket = "thumbnails-476114132237";
     this.userPK = "USER#123";
+    this.elyssePocVideo = "elysse-poc-video";
   }
 
   async validateProject(projectId, res) {
@@ -68,22 +70,23 @@ class RoomService {
     const file = req.files?.videos?.[0];
 
     if (!file) {
-      handlers.logger.failed({
-        message: "No video file provided"
-      });
+      handlers.logger.failed({ message: "No video file provided" });
       return handlers.response.failed({
         res,
         message: "No video file provided"
       });
     }
 
+    const jobId = uuidv4();
+    const originalFileName = path.basename(file.originalname || "video.mp4");
+    const uniqueFileKey = `input/${jobId}-${originalFileName.replace(/\s+/g, "_")}`;
+
     const localFilePath = file.path;
-    const fileKey = `${uuidv4()}.mp4`;
 
     const params = {
-      Bucket: this.s3VideoBucket,
-      Key: fileKey,
-      Body: fs.createReadStream(file.path),
+      Bucket: this.elyssePocVideo,
+      Key: uniqueFileKey,
+      Body: fs.createReadStream(localFilePath),
       ContentType: file.mimetype,
       PartSize: 5 * 1024 * 1024,
       QueueSize: 20,
@@ -99,13 +102,21 @@ class RoomService {
 
       handlers.logger.success({
         message: "Video uploaded successfully",
-        data: { url: uploadResult.Location }
+        data: {
+          url: uploadResult.Location,
+          jobId,
+          key: uniqueFileKey
+        }
       });
 
       return handlers.response.success({
         res,
         message: "Video uploaded successfully",
-        data: { url: uploadResult.Location }
+        data: {
+          url: uploadResult.Location,
+          jobId,
+          key: uniqueFileKey
+        }
       });
     } catch (err) {
       fs.unlink(localFilePath, () => {});
@@ -118,9 +129,9 @@ class RoomService {
   }
 
   async createRoom(req, res) {
-    const { projectId, name, description, accessories, videoUrl } = req.body;
+    const { projectId, name, description, videoUrl, jobId } = req.body;
 
-    if (!projectId || !videoUrl) {
+    if (!projectId || !videoUrl || !jobId) {
       handlers.logger.failed({
         message: !projectId ? "Project ID is required" : "Video URL is required"
       });
@@ -153,7 +164,7 @@ class RoomService {
         Description: description,
         Video: videoUrl,
         Thumbnail: thumbnail,
-        Accessories: accessories,
+        JobId: jobId,
         CreatedAt: createdAt
       };
 
@@ -184,17 +195,14 @@ class RoomService {
     const { projectId, roomId } = req.params;
 
     if (!projectId || !roomId) {
-      handlers.logger.failed({
-        message: !projectId ? "Project ID is required" : "Room ID is required"
-      });
-      return handlers.response.failed({
-        res,
-        message: !projectId ? "Project ID is required" : "Room ID is required"
-      });
+      const message = !projectId
+        ? "Project ID is required"
+        : "Room ID is required";
+      handlers.logger.failed({ message });
+      return handlers.response.failed({ res, message });
     }
 
     if (!(await this.validateProject(projectId, res))) return;
-
     if (!(await this.validateRoom(projectId, roomId, res))) return;
 
     try {
@@ -213,19 +221,83 @@ class RoomService {
         return handlers.response.failed({ res, message: "Invalid room ID" });
       }
 
+      const room = result.Item;
+
+      // If no JobId, return room as is
+      if (!room.JobId) {
+        handlers.logger.success({
+          message: "Room fetched successfully (no JobId)",
+          data: room
+        });
+        return handlers.response.success({
+          res,
+          message: "Room fetched successfully",
+          data: room
+        });
+      }
+
+      // Job flow
+      const jobId = room.JobId;
+      const bucket = this.elyssePocVideo;
+      const outputPrefix = `output/${jobId}/`;
+
+      const getFileContent = async (key) => {
+        try {
+          const data = await s3
+            .getObject({ Bucket: bucket, Key: `${outputPrefix}${key}` })
+            .promise();
+          return data.Body.toString("utf-8").trim();
+        } catch {
+          return null;
+        }
+      };
+
+      const [errorText, resultText] = await Promise.all([
+        getFileContent("error.txt"),
+        getFileContent("result.txt")
+      ]);
+
+      let Accessories = null;
+
+      if (errorText) {
+        try {
+          console.log({ errorText });
+
+          Accessories = JSON.parse(errorText);
+        } catch {
+          Accessories = { error: errorText };
+        }
+      } else if (resultText) {
+        try {
+          console.log({ resultText });
+
+          Accessories = JSON.parse(resultText);
+        } catch {
+          Accessories = { result: resultText };
+        }
+      }
+
+      const responsePayload = {
+        ...room,
+        Accessories
+      };
+
       handlers.logger.success({
-        message: "Room fetched successfully",
-        data: result.Item
+        message: "Room fetched successfully with job output",
+        data: responsePayload
       });
 
       return handlers.response.success({
         res,
         message: "Room fetched successfully",
-        data: result.Item
+        data: responsePayload
       });
     } catch (error) {
       handlers.logger.error({ message: error });
-      return handlers.response.error({ res, message: "Failed to fetch room" });
+      return handlers.response.error({
+        res,
+        message: "Failed to fetch room"
+      });
     }
   }
 
@@ -246,7 +318,6 @@ class RoomService {
     let nextKey = undefined;
 
     try {
-      // Fetch all pages
       do {
         const result = await docClient
           .query({
@@ -271,19 +342,68 @@ class RoomService {
         return handlers.response.success({ res, message: "No rooms yet" });
       }
 
-      // ✅ Sort by CreatedAt descending
-      fetchedItems.sort(
+      // Helper to get file content
+      const getFileContent = async (bucket, outputPrefix, key) => {
+        try {
+          const data = await s3
+            .getObject({ Bucket: bucket, Key: `${outputPrefix}${key}` })
+            .promise();
+          return data.Body.toString("utf-8").trim();
+        } catch {
+          return null;
+        }
+      };
+
+      const bucket = this.elyssePocVideo;
+
+      // For each room, attach Accessories if JobId exists
+      const enrichedRooms = await Promise.all(
+        fetchedItems.map(async (room) => {
+          if (!room.JobId) return room;
+
+          const outputPrefix = `output/${room.JobId}/`;
+
+          const [errorText, resultText] = await Promise.all([
+            getFileContent(bucket, outputPrefix, "error.txt"),
+            getFileContent(bucket, outputPrefix, "result.txt")
+          ]);
+
+          let Accessories = null;
+
+          if (errorText) {
+            try {
+              Accessories = JSON.parse(errorText);
+            } catch {
+              Accessories = { error: errorText };
+            }
+          } else if (resultText) {
+            try {
+              Accessories = JSON.parse(resultText);
+            } catch {
+              Accessories = { result: resultText };
+            }
+          }
+
+          return {
+            ...room,
+            Accessories
+          };
+        })
+      );
+
+      // Sort by CreatedAt descending
+      enrichedRooms.sort(
         (a, b) => new Date(b.CreatedAt) - new Date(a.CreatedAt)
       );
 
       handlers.logger.success({
         message: "Rooms fetched successfully",
-        data: fetchedItems
+        data: enrichedRooms
       });
       return handlers.response.success({
         res,
         message: "Rooms fetched successfully",
-        data: fetchedItems
+        data: enrichedRooms
       });
     } catch (error) {
       handlers.logger.error({ message: error });
